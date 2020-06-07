@@ -2,9 +2,14 @@ package org.example;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.KTable;
+import org.apache.kafka.streams.kstream.Materialized;
+import org.apache.kafka.streams.kstream.Produced;
 
+import java.util.Arrays;
 import java.util.Properties;
 
 public class WordCount {
@@ -17,13 +22,26 @@ public class WordCount {
         config.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
     }
 
-    KStreamBuilder builder = new KStreamBuilder();
-
+    StreamsBuilder builder = new StreamsBuilder();
     //1. stream for kafka
-    //2. map values to lower case
-    //3. flat map values to split with space
-    //4. select key to apply a key (we discard the old key)
-    //5. group by key
-    //6. count occurrences
+    KStream<String, String> textLines = builder.stream("word-count-input");
+
+    KTable<String, Long> wordCounts = textLines
+            // 2 - map values to lowercase
+            .mapValues(textLine -> textLine.toLowerCase())
+            // can be alternatively written as:
+            // .mapValues(String::toLowerCase)
+            // 3 - flatmap values split by space
+            .flatMapValues(textLine -> Arrays.asList(textLine.split("\\W+")))
+            // 4 - select key to apply a key (we discard the old key)
+            .selectKey((key, word) -> word)
+            // 5 - group by key before aggregation
+            .groupByKey()
+            // 6 - count occurences
+            .count(Materialized.as("Counts"));
+
     //7. to in order to write the result back to Kafka
+     wordCounts.toStream().to("word-count-output", Produced.with(Serdes.String(), Serdes.Long()));
+
+     return builder.build();
 }
